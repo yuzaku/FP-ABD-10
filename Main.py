@@ -229,8 +229,7 @@ class BackupRestoreApp(tk.Tk):
         logging.info(f"Performing Full Database Backup for database: {dbname} to path: {path}")
         try:
             self.execute(f"BACKUP DATABASE [{dbname}] TO DISK = '{converted_path}\\{dbname}_{self.get_datetime()}.bak';", self.connectionpyodbc(self.server_entry.get(), self.user_entry.get(), self.password_entry.get()))
-            messagebox.showinfo("Success", "Full Database Backup completed successfully")
-            logging.info("Full Database Backup completed successfully")
+            logging.info(f"Full Database Backup completed successfully with name {dbname}_{self.get_datetime()}.bak")
             recent_backup_id = self.get_recent_backup_set_id(self.connectionpyodbc(self.server_entry.get(), self.user_entry.get(), self.password_entry.get()), dbname)
             self.save_backup_set_id(recent_backup_id)
         except Exception as e:
@@ -244,8 +243,7 @@ class BackupRestoreApp(tk.Tk):
         logging.info("Performing Differential Backup")
         try:
             self.execute(f"BACKUP DATABASE [{dbname}] TO DISK = '{converted_path}\\{dbname}_diff_{self.get_datetime()}.bak' WITH DIFFERENTIAL;", self.connectionpyodbc(self.server_entry.get(), self.user_entry.get(), self.password_entry.get()))
-            messagebox.showinfo("Success", "Differential Backup completed successfully")
-            logging.info("Differential Backup completed successfully")
+            logging.info(f"Differential Backup completed successfully with name {converted_path}\\{dbname}_diff_{self.get_datetime()}.bak")
             recent_backup_id = self.get_recent_backup_set_id(self.connectionpyodbc(self.server_entry.get(), self.user_entry.get(), self.password_entry.get()), dbname)
             self.save_backup_set_id(recent_backup_id)
         except Exception as e:
@@ -258,8 +256,7 @@ class BackupRestoreApp(tk.Tk):
         logging.info("Performing Transaction Log Backup")
         try:
             self.execute(f"BACKUP LOG [{dbname}] TO DISK = '{converted_path}\\{dbname}_log_{self.get_datetime()}.trn';", self.connectionpyodbc(self.server_entry.get(), self.user_entry.get(), self.password_entry.get()))
-            messagebox.showinfo("Success", "Transaction Log Backup completed successfully")
-            logging.info("Transaction Log Backup completed successfully")
+            logging.info(f"Transaction Log Backup completed successfully with name {dbname}_log_{self.get_datetime()}.trn")
             recent_backup_id = self.get_recent_backup_set_id(self.connectionpyodbc(self.server_entry.get(), self.user_entry.get(), self.password_entry.get()), dbname)
             self.save_backup_set_id(recent_backup_id)
         except Exception as e:
@@ -500,65 +497,70 @@ class BackupRestoreApp(tk.Tk):
         primary_db = self.database_combobox.get()
         backup_path = self.backup_path_entry.get()
         converted_backup_path = self.convert_path_format(backup_path)
+        primary_connection = self.connectionpyodbc(server, username, password)
         logging.info(f"Performing Log Shipping from {primary_db} to {secondary_db}")
 
         try:
-            # Backup transaction log on primary server
-            self.transaction_log_backup()
-            
-            primary_connection = self.connectionpyodbc(server, username, password)
-            
-            # Get the recent backup set ID after the new transaction log backup
-            recent_backup_id = self.get_recent_backup_set_id(primary_connection, primary_db)
-            self.save_backup_set_id(recent_backup_id)
-
-            # Get the last logged backup set ID
-            last_logged_backup_id = self.load_backup_set_id()
-
             # Connect to secondary server
             secondary_connection = pyodbc.connect(
                 f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={secondary_server};DATABASE=master;UID={secondary_user};PWD={secondary_password}',
                 autocommit=True
             )
-            
-            # Check if we need to perform a full backup and restore
-            if last_logged_backup_id is None or recent_backup_id - last_logged_backup_id > 100:  # Arbitrary threshold
-                logging.info("Performing full backup and restore")
+
+            # Check if the secondary database exists
+            cursor = secondary_connection.cursor()
+            cursor.execute(f"SELECT DB_ID('{secondary_db}')")
+            db_id = cursor.fetchone()
+            if db_id[0] is None:
+                # Database does not exist, perform full restore
+                logging.info("Restoring Full Backup on Secondary Server")
                 self.backup_full()
                 
                 self.execute(f"RESTORE FILELISTONLY FROM DISK = '{converted_backup_path}\\{primary_db}_{self.get_datetime()}.bak'", secondary_connection)
                 self.execute(
-                    f"RESTORE DATABASE [{secondary_db}] FROM DISK = '{converted_backup_path}\\{primary_db}_{self.get_datetime()}.bak' WITH REPLACE, NORECOVERY, "
+                    f"RESTORE DATABASE [{secondary_db}] FROM DISK = '{converted_backup_path}\\{primary_db}_{self.get_datetime()}.bak' WITH NORECOVERY, REPLACE, "
                     f"MOVE '{primary_db}' TO '{converted_backup_path}\\{secondary_db}.mdf', "
                     f"MOVE '{primary_db}_log' TO '{converted_backup_path}\\{secondary_db}_log.ldf';",
                     secondary_connection
                 )
-                last_logged_backup_id = recent_backup_id
 
-            # Find all transaction log backups that need to be applied
-            cursor = primary_connection.cursor()
-            cursor.execute(f"""
-                SELECT bmf.physical_device_name
-                FROM msdb.dbo.backupset bs
-                JOIN msdb.dbo.backupmediafamily bmf ON bs.media_set_id = bmf.media_set_id
-                WHERE bs.database_name = '{primary_db}'
-                AND bs.type = 'L'
-                AND bs.backup_set_id > {last_logged_backup_id}
-                ORDER BY bs.backup_start_date
-            """)
-            log_backups = cursor.fetchall()
+            # # Get the last LSN from the primary database
+            # primary_connection = self.connectionpyodbc(server, username, password)
+            # cursor = primary_connection.cursor()
+            # cursor.execute(f"""
+            #     SELECT TOP 1 last_lsn
+            #     FROM msdb.dbo.backupset
+            #     WHERE database_name = '{primary_db}'
+            #     ORDER BY backup_finish_date DESC
+            # """)
+            # last_lsn = cursor.fetchone()[0]
+
+            # Backup transaction log on primary server
+            self.transaction_log_backup()
             
-            # Apply each log backup in sequence
-            for log_backup in log_backups:
-                try:
-                    self.execute(f"RESTORE LOG [{secondary_db}] FROM DISK = '{log_backup[0]}' WITH NORECOVERY;", secondary_connection)
-                except Exception as e:
-                    logging.error(f"Error applying log backup {log_backup[0]}: {e}")
-                    raise
+            # # Find all transaction log backups that need to be applied
+            # cursor = primary_connection.cursor()
+            # cursor.execute(f"""
+            #     SELECT bmf.physical_device_name
+            #     FROM msdb.dbo.backupset bs
+            #     JOIN msdb.dbo.backupmediafamily bmf ON bs.media_set_id = bmf.media_set_id
+            #     WHERE bs.database_name = '{primary_db}'
+            #     AND bs.type = 'L'
+            #     AND bs.first_lsn > CAST('{last_lsn}' AS NUMERIC(25,0))
+            #     ORDER BY bs.backup_start_date
+            # """)
+            # log_backups = cursor.fetchall()
+            
+            # # Apply each log backup in sequence
+            # for log_backup in log_backups:
+            #     try:
+            #         self.execute(f"RESTORE LOG [{secondary_db}] FROM DISK = '{log_backup[0]}' WITH NORECOVERY;", secondary_connection)
+            #         logging.info(f"Log Shipping from {primary_db} to {secondary_db} completed successfully")
+            #     except Exception as e:
+            #         logging.error(f"Error applying log backup {log_backup[0]}: {e}")
+            #         raise
 
-            # Update the last logged backup ID
-            self.save_backup_set_id(recent_backup_id)
-
+            self.execute(f"RESTORE LOG [{secondary_db}] FROM DISK = '{converted_backup_path}\\{primary_db}_log_{self.get_datetime()}.trn' WITH NORECOVERY;", secondary_connection)
             logging.info(f"Log Shipping from {primary_db} to {secondary_db} completed successfully")
         except Exception as e:
             logging.error(f"Error during log shipping: {e}")
