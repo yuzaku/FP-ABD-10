@@ -3,3 +3,6 @@
 1. Download .zip repository
 2. Install library yang diperlukan dengan buka command line pada folder lokasi file dan ketik ```pip install -r requirements.txt```
 3. Buka dan jalankan ```Main.py``` pada code editor
+## Alternatif
+1. Download ```Backup Restore App.exe```
+2. Jalankan ```Backup Restore App.exe```
