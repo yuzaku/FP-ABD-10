@@ -229,6 +229,7 @@ class BackupRestoreApp(tk.Tk):
         logging.info(f"Performing Full Database Backup for database: {dbname} to path: {path}")
         try:
             self.execute(f"BACKUP DATABASE [{dbname}] TO DISK = '{converted_path}\\{dbname}_{self.get_datetime()}.bak';", self.connectionpyodbc(self.server_entry.get(), self.user_entry.get(), self.password_entry.get()))
+            messagebox.showinfo("Success", "Full Database Backup completed successfully")
             logging.info("Full Database Backup completed successfully")
             recent_backup_id = self.get_recent_backup_set_id(self.connectionpyodbc(self.server_entry.get(), self.user_entry.get(), self.password_entry.get()), dbname)
             self.save_backup_set_id(recent_backup_id)
@@ -243,6 +244,7 @@ class BackupRestoreApp(tk.Tk):
         logging.info("Performing Differential Backup")
         try:
             self.execute(f"BACKUP DATABASE [{dbname}] TO DISK = '{converted_path}\\{dbname}_diff_{self.get_datetime()}.bak' WITH DIFFERENTIAL;", self.connectionpyodbc(self.server_entry.get(), self.user_entry.get(), self.password_entry.get()))
+            messagebox.showinfo("Success", "Differential Backup completed successfully")
             logging.info("Differential Backup completed successfully")
             recent_backup_id = self.get_recent_backup_set_id(self.connectionpyodbc(self.server_entry.get(), self.user_entry.get(), self.password_entry.get()), dbname)
             self.save_backup_set_id(recent_backup_id)
@@ -256,6 +258,7 @@ class BackupRestoreApp(tk.Tk):
         logging.info("Performing Transaction Log Backup")
         try:
             self.execute(f"BACKUP LOG [{dbname}] TO DISK = '{converted_path}\\{dbname}_log_{self.get_datetime()}.trn';", self.connectionpyodbc(self.server_entry.get(), self.user_entry.get(), self.password_entry.get()))
+            messagebox.showinfo("Success", "Transaction Log Backup completed successfully")
             logging.info("Transaction Log Backup completed successfully")
             recent_backup_id = self.get_recent_backup_set_id(self.connectionpyodbc(self.server_entry.get(), self.user_entry.get(), self.password_entry.get()), dbname)
             self.save_backup_set_id(recent_backup_id)
