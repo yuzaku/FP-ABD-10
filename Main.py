@@ -21,8 +21,8 @@ class BackupRestoreApp(tk.Tk):
         self.schedule_thread = None
     
     def setup_logging(self):
-        # Get the directory of the current Python file
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_dir = os.getcwd()
+        
         log_directory = os.path.join(script_dir, 'logs')
     
         # Create the log directory if it does not exist
@@ -636,7 +636,7 @@ class BackupRestoreApp(tk.Tk):
     
     def update_error_report(self):
         # Get the directory of the current Python file
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_dir = os.getcwd()
         log_file = os.path.join(script_dir, 'logs', 'backup_restore.log')
         current_position = self.error_report_text.yview()[0]
 
